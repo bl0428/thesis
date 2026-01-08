@@ -1,0 +1,390 @@
+<!-- Copyright 2021 DeepMind Technologies Limited. Modified for dual-agent fencing. -->
+
+<mujoco model="Dual_Humanoid_Fencing">
+  <option timestep="0.005"/>
+
+  <visual>
+    <map force="0.1" zfar="30"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global offwidth="2560" offheight="1440" elevation="-20" azimuth="120"/>
+  </visual>
+
+  <statistic center="1.5 0 0.7"/> <!-- Center camera view between the two humanoids -->
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1=".3 .5 .7" rgb2="0 0 0" width="32" height="512"/>
+    <texture name="body_A" type="cube" builtin="flat" mark="cross" width="128" height="128" rgb1="0.8 0.3 0.3" rgb2="0.8 0.3 0.3" markrgb="1 1 1"/> <!-- Red for A -->
+    <material name="body_A_mat" texture="body_A" texuniform="true" rgba="0.8 0.3 .3 1"/>
+    <texture name="body_B" type="cube" builtin="flat" mark="cross" width="128" height="128" rgb1="0.3 0.3 0.8" rgb2="0.3 0.3 0.8" markrgb="1 1 1"/> <!-- Blue for B -->
+    <material name="body_B_mat" texture="body_B" texuniform="true" rgba="0.3 0.3 .8 1"/>
+
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1=".1 .2 .3" rgb2=".2 .3 .4"/>
+    <material name="grid" texture="grid" texrepeat="1 1" texuniform="true" reflectance=".2"/>
+  </asset>
+
+  <default>
+    <motor ctrlrange="-1 1" ctrllimited="true"/>
+    <!-- Default class 'body_A' for Fencer A -->
+    <default class="body_A">
+      <!-- Fencer A Body Geoms: group="3" -->
+      <geom type="capsule" condim="1" friction=".7" solimp=".9 .99 .003" solref=".015 1" material="body_A_mat" group="3"/>
+      <default class="thigh"><geom size=".06"/></default>
+      <default class="shin"><geom fromto="0 0 0 0 0 -.3"  size=".049"/></default>
+      <default class="foot">
+        <geom size=".027"/>
+        <default class="foot1"><geom fromto="-.07 -.01 0 .14 -.03 0"/></default>
+        <default class="foot2"><geom fromto="-.07 .01 0 .14  .03 0"/></default>
+      </default>
+      <default class="arm_upper"><geom size=".04"/></default>
+      <default class="arm_lower"><geom size=".031"/></default>
+      <default class="hand"><geom type="sphere" size=".04"/></default>
+      <!-- Epee Blade: group="2" (for contact detection) -->
+      <default class="epee_blade_geom">
+        <geom type="capsule" size="0.005" rgba="0.8 0.8 0.8 1" mass="0.05" group="2" condim="6"/>
+      </default>
+      <default class="epee_guard_geom">
+        <geom type="sphere" size="0.03" rgba="0.4 0.4 0.4 1" mass="0.02" group="2"/>
+      </default>
+
+      <!-- Joints (Shared joint parameters) -->
+      <joint type="hinge" damping=".2" stiffness="1" armature=".01" limited="true" solimplimit="0 .99 .01"/>
+      <default class="joint_big">
+        <joint damping="5" stiffness="10"/>
+        <default class="hip_x"><joint range="-30 10"/></default>
+        <default class="hip_z"><joint range="-60 35"/></default>
+        <default class="hip_y"><joint axis="0 1 0" range="-150 20"/></default>
+        <default class="joint_big_stiff"><joint stiffness="20"/></default>
+      </default>
+      <default class="knee"><joint pos="0 0 .02" axis="0 -1 0" range="-160 2"/></default>
+      <default class="ankle"><joint range="-50 50"/></default>
+    </default>
+
+    <!-- Default class 'body_B' for Fencer B -->
+    <default class="body_B">
+      <!-- Fencer B Body Geoms: group="4" -->
+      <geom type="capsule" condim="1" friction=".7" solimp=".9 .99 .003" solref=".015 1" material="body_B_mat" group="4"/>
+      <default class="thigh"><geom size=".06"/></default>
+      <default class="shin"><geom fromto="0 0 0 0 0 -.3"  size=".049"/></default>
+      <default class="foot">
+        <geom size=".027"/>
+        <default class="foot1"><geom fromto="-.07 -.01 0 .14 -.03 0"/></default>
+        <default class="foot2"><geom fromto="-.07 .01 0 .14  .03 0"/></default>
+      </default>
+      <default class="arm_upper"><geom size=".04"/></default>
+      <default class="arm_lower"><geom size=".031"/></default>
+      <default class="hand"><geom type="sphere" size=".04"/></default>
+      <!-- Epee Blade: group="2" (for contact detection) -->
+      <default class="epee_blade_geom">
+        <geom type="capsule" size="0.005" rgba="0.8 0.8 0.8 1" mass="0.05" group="2" condim="6"/>
+      </default>
+      <default class="epee_guard_geom">
+        <geom type="sphere" size="0.03" rgba="0.4 0.4 0.4 1" mass="0.02" group="2"/>
+      </default>
+    </default>
+  </default>
+
+  <worldbody>
+    <geom name="floor" size="0 0 .05" type="plane" material="grid" condim="3"/>
+    <light name="spotlight" mode="targetbodycom" target="torso" diffuse=".8 .8 .8" specular="0.3 0.3 0.3" pos="0 -6 4" cutoff="30"/>
+    <light name="top" pos="1.5 0 2" mode="trackcom"/>
+
+    <!-- ============================================== -->
+    <!-- FENCER A (Original Humanoid - uses class="body_A") -->
+    <!-- ============================================== -->
+    <body name="torso" pos="0 0 1.282" childclass="body_A">
+      <camera name="back_A" pos="-3 0 1" xyaxes="0 -1 0 1 0 2" mode="trackcom"/>
+      <camera name="side_A" pos="0 -3 1" xyaxes="1 0 0 0 1 2" mode="trackcom"/>
+      <freejoint name="root"/>
+      <geom name="torso" fromto="0 -.07 0 0 .07 0" size=".07"/>
+      <geom name="waist_upper" fromto="-.01 -.06 -.12 -.01 .06 -.12" size=".06"/>
+      <body name="head" pos="0 0 .19">
+        <geom name="head" type="sphere" size=".09"/>
+        <camera name="egocentric_A" pos=".09 0 0" xyaxes="0 -1 0 .1 0 1" fovy="80"/>
+      </body>
+      <body name="waist_lower" pos="-.01 0 -.26">
+        <geom name="waist_lower" fromto="0 -.06 0 0 .06 0" size=".06"/>
+        <joint name="abdomen_z" pos="0 0 .065" axis="0 0 1" range="-45 45" class="joint_big_stiff"/>
+        <joint name="abdomen_y" pos="0 0 .065" axis="0 1 0" range="-75 30" class="joint_big"/>
+        <body name="pelvis" pos="0 0 -.165">
+          <joint name="abdomen_x" pos="0 0 .1" axis="1 0 0" range="-35 35" class="joint_big"/>
+          <geom name="butt" fromto="-.02 -.07 0 -.02 .07 0" size=".09"/>
+          <body name="thigh_right" pos="0 -.1 -.04">
+            <joint name="hip_x_right" axis="1 0 0" class="hip_x"/>
+            <joint name="hip_z_right" axis="0 0 1" class="hip_z"/>
+            <joint name="hip_y_right" class="hip_y"/>
+            <geom name="thigh_right" fromto="0 0 0 0 .01 -.34" class="thigh"/>
+            <body name="shin_right" pos="0 .01 -.4">
+              <joint name="knee_right" class="knee"/>
+              <geom name="shin_right" class="shin"/>
+              <body name="foot_right" pos="0 0 -.39">
+                <joint name="ankle_y_right" pos="0 0 .08" axis="0 1 0" stiffness="6" range="-50 50"/>
+                <joint name="ankle_x_right" pos="0 0 .04" stiffness="3" range="-50 50" axis="1 0 .5"/>
+                <geom name="foot1_right" class="foot1"/>
+                <geom name="foot2_right" class="foot2"/>
+              </body>
+            </body>
+          </body>
+          <body name="thigh_left" pos="0 .1 -.04">
+            <joint name="hip_x_left" axis="-1 0 0" class="hip_x"/>
+            <joint name="hip_z_left" axis="0 0 -1" class="hip_z"/>
+            <joint name="hip_y_left" class="hip_y"/>
+            <geom name="thigh_left" fromto="0 0 0 0 -.01 -.34" class="thigh"/>
+            <body name="shin_left" pos="0 -.01 -.4">
+              <joint name="knee_left" class="knee"/>
+              <geom name="shin_left" fromto="0 0 0 0 0 -.3" class="shin"/>
+              <body name="foot_left" pos="0 0 -.39">
+                <joint name="ankle_y_left" pos="0 0 .08" axis="0 1 0" stiffness="6" range="-50 50"/>
+                <joint name="ankle_x_left" pos="0 0 .04" stiffness="3" range="-50 50" axis="-1 0 -.5"/>
+                <geom name="foot1_left" class="foot1"/>
+                <geom name="foot2_left" class="foot2"/>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="upper_arm_right" pos="0 -.17 .06">
+        <joint name="shoulder1_right" axis="2 1 1"  class="shoulder"/>
+        <joint name="shoulder2_right" axis="0 -1 1" class="shoulder"/>
+        <geom name="upper_arm_right" fromto="0 0 0 .16 -.16 -.16" class="arm_upper"/>
+        <body name="lower_arm_right" pos=".18 -.18 -.18">
+          <joint name="elbow_right" axis="0 -1 1" range="-100 50" stiffness="0"/>
+          <geom name="lower_arm_right" fromto=".01 .01 .01 .17 .17 .17" class="arm_lower"/>
+          <body name="hand_right" pos=".18 .18 .18">
+            <geom name="hand_right" zaxis="1 1 1" class="hand"/>
+            <!-- Fencing epee (attached to right hand) -->
+            <body name="epee" pos="0.05 0 0" quat="1 0 0 0">
+              <!-- Blade geometry (group="2" for contact detection) -->
+              <geom name="epee_blade" class="epee_blade_geom" fromto="0 0 0 0.7 0 0"/>
+              <!-- Guard geometry (group="2") -->
+              <geom name="epee_guard" class="epee_guard_geom" pos="0 0 0"/>
+              <!-- Add a site at the tip of the blade (for sensing location) -->
+              <site name="epee_tip" pos="0.7 0 0" size="0.01" rgba="1 0 0 1"/>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="upper_arm_left" pos="0 .17 .06">
+        <joint name="shoulder1_left" axis="-2 1 -1" class="shoulder"/>
+        <joint name="shoulder2_left" axis="0 -1 -1"  class="shoulder"/>
+        <geom name="upper_arm_left" fromto="0 0 0 .16 .16 -.16" class="arm_upper"/>
+        <body name="lower_arm_left" pos=".18 .18 -.18">
+          <joint name="elbow_left" axis="0 -1 -1" range="-100 50" stiffness="0"/>
+          <geom name="lower_arm_left" fromto=".01 -.01 .01 .17 -.17 .17" class="arm_lower"/>
+          <body name="hand_left" pos=".18 -.18 .18">
+            <geom name="hand_left" zaxis="1 -1 1" class="hand"/>
+          </body>
+        </body>
+      </body>
+    </body>
+
+    <!-- ============================================== -->
+    <!-- FENCER B (Opponent Humanoid - uses class="body_B") -->
+    <!-- Placed 3 units away and rotated 180 degrees (quat="0 0 1 0") -->
+    <!-- ============================================== -->
+    <body name="torso_B" pos="3 0 1.282" quat="0 0 1 0" childclass="body_B">
+      <camera name="back_B" pos="-3 0 1" xyaxes="0 -1 0 1 0 2" mode="trackcom"/>
+      <camera name="side_B" pos="0 -3 1" xyaxes="1 0 0 0 1 2" mode="trackcom"/>
+      <freejoint name="root_B"/>
+      <geom name="torso_B" fromto="0 -.07 0 0 .07 0" size=".07"/>
+      <geom name="waist_upper_B" fromto="-.01 -.06 -.12 -.01 .06 -.12" size=".06"/>
+      <body name="head_B" pos="0 0 .19">
+        <geom name="head_B" type="sphere" size=".09"/>
+        <camera name="egocentric_B" pos=".09 0 0" xyaxes="0 -1 0 .1 0 1" fovy="80"/>
+      </body>
+      <body name="waist_lower_B" pos="-.01 0 -.26">
+        <geom name="waist_lower_B" fromto="0 -.06 0 0 .06 0" size=".06"/>
+        <joint name="abdomen_z_B" pos="0 0 .065" axis="0 0 1" range="-45 45" class="joint_big_stiff"/>
+        <joint name="abdomen_y_B" pos="0 0 .065" axis="0 1 0" range="-75 30" class="joint_big"/>
+        <body name="pelvis_B" pos="0 0 -.165">
+          <joint name="abdomen_x_B" pos="0 0 .1" axis="1 0 0" range="-35 35" class="joint_big"/>
+          <geom name="butt_B" fromto="-.02 -.07 0 -.02 .07 0" size=".09"/>
+          <body name="thigh_right_B" pos="0 -.1 -.04">
+            <joint name="hip_x_right_B" axis="1 0 0" class="hip_x"/>
+            <joint name="hip_z_right_B" axis="0 0 1" class="hip_z"/>
+            <joint name="hip_y_right_B" class="hip_y"/>
+            <geom name="thigh_right_B" fromto="0 0 0 0 .01 -.34" class="thigh"/>
+            <body name="shin_right_B" pos="0 .01 -.4">
+              <joint name="knee_right_B" class="knee"/>
+              <geom name="shin_right_B" class="shin"/>
+              <body name="foot_right_B" pos="0 0 -.39">
+                <joint name="ankle_y_right_B" pos="0 0 .08" axis="0 1 0" stiffness="6" range="-50 50"/>
+                <joint name="ankle_x_right_B" pos="0 0 .04" stiffness="3" range="-50 50" axis="1 0 .5"/>
+                <geom name="foot1_right_B" class="foot1"/>
+                <geom name="foot2_right_B" class="foot2"/>
+              </body>
+            </body>
+          </body>
+          <body name="thigh_left_B" pos="0 .1 -.04">
+            <joint name="hip_x_left_B" axis="-1 0 0" class="hip_x"/>
+            <joint name="hip_z_left_B" axis="0 0 -1" class="hip_z"/>
+            <joint name="hip_y_left_B" class="hip_y"/>
+            <geom name="thigh_left_B" fromto="0 0 0 0 -.01 -.34" class="thigh"/>
+            <body name="shin_left_B" pos="0 -.01 -.4">
+              <joint name="knee_left_B" class="knee"/>
+              <geom name="shin_left_B" fromto="0 0 0 0 0 -.3" class="shin"/>
+              <body name="foot_left_B" pos="0 0 -.39">
+                <joint name="ankle_y_left_B" pos="0 0 .08" axis="0 1 0" stiffness="6" range="-50 50"/>
+                <joint name="ankle_x_left_B" pos="0 0 .04" stiffness="3" range="-50 50" axis="-1 0 -.5"/>
+                <geom name="foot1_left_B" class="foot1"/>
+                <geom name="foot2_left_B" class="foot2"/>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="upper_arm_right_B" pos="0 -.17 .06">
+        <joint name="shoulder1_right_B" axis="2 1 1"  class="shoulder"/>
+        <joint name="shoulder2_right_B" axis="0 -1 1" class="shoulder"/>
+        <geom name="upper_arm_right_B" fromto="0 0 0 .16 -.16 -.16" class="arm_upper"/>
+        <body name="lower_arm_right_B" pos=".18 -.18 -.18">
+          <joint name="elbow_right_B" axis="0 -1 1" range="-100 50" stiffness="0"/>
+          <geom name="lower_arm_right_B" fromto=".01 .01 .01 .17 .17 .17" class="arm_lower"/>
+          <body name="hand_right_B" pos=".18 .18 .18">
+            <geom name="hand_right_B" zaxis="1 1 1" class="hand"/>
+            <!-- Fencing epee (attached to right hand) -->
+            <body name="epee_B" pos="0.05 0 0" quat="1 0 0 0">
+              <!-- Blade geometry (group="2") -->
+              <geom name="epee_blade_B" class="epee_blade_geom" fromto="0 0 0 0.7 0 0"/>
+              <!-- Guard geometry (group="2") -->
+              <geom name="epee_guard_B" class="epee_guard_geom" pos="0 0 0"/>
+              <!-- Add a site at the tip of the blade (for sensing location) -->
+              <site name="epee_tip_B" pos="0.7 0 0" size="0.01" rgba="1 0 0 1"/>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="upper_arm_left_B" pos="0 .17 .06">
+        <joint name="shoulder1_left_B" axis="-2 1 -1" class="shoulder"/>
+        <joint name="shoulder2_left_B" axis="0 -1 -1"  class="shoulder"/>
+        <geom name="upper_arm_left_B" fromto="0 0 0 .16 .16 -.16" class="arm_upper"/>
+        <body name="lower_arm_left_B" pos=".18 .18 -.18">
+          <joint name="elbow_left_B" axis="0 -1 -1" range="-100 50" stiffness="0"/>
+          <geom name="lower_arm_left_B" fromto=".01 -.01 .01 .17 -.17 .17" class="arm_lower"/>
+          <body name="hand_left_B" pos=".18 -.18 .18">
+            <geom name="hand_left_B" zaxis="1 -1 1" class="hand"/>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <!-- CONTACT EXCLUSIONS -->
+  <contact>
+    <!-- Exclude contacts within Fencer A's waist/thigh -->
+    <exclude body1="waist_lower" body2="thigh_right"/>
+    <exclude body1="waist_lower" body2="thigh_left"/>
+    <!-- Exclude contacts within Fencer B's waist/thigh -->
+    <exclude body1="waist_lower_B" body2="thigh_right_B"/>
+    <exclude body1="waist_lower_B" body2="thigh_left_B"/>
+    <!-- Exclude contacts between Fencer A's epee and Fencer A's body -->
+    <exclude body1="epee" body2="torso"/>
+    <exclude body1="epee" body2="head"/>
+    <exclude body1="epee" body2="waist_lower"/>
+    <exclude body1="epee" body2="pelvis"/>
+    <exclude body1="epee" body2="thigh_right"/>
+    <exclude body1="epee" body2="thigh_left"/>
+    <exclude body1="epee" body2="upper_arm_right"/>
+    <exclude body1="epee" body2="upper_arm_left"/>
+  </contact>
+
+  <tendon>
+    <!-- Fencer A Tendons -->
+    <fixed name="hamstring_right" limited="true" range="-0.3 2">
+      <joint joint="hip_y_right" coef=".5"/>
+      <joint joint="knee_right" coef="-.5"/>
+    </fixed>
+    <fixed name="hamstring_left" limited="true" range="-0.3 2">
+      <joint joint="hip_y_left" coef=".5"/>
+      <joint joint="knee_left" coef="-.5"/>
+    </fixed>
+    <!-- Fencer B Tendons -->
+    <fixed name="hamstring_right_B" limited="true" range="-0.3 2">
+      <joint joint="hip_y_right_B" coef=".5"/>
+      <joint joint="knee_right_B" coef="-.5"/>
+    </fixed>
+    <fixed name="hamstring_left_B" limited="true" range="-0.3 2">
+      <joint joint="hip_y_left_B" coef=".5"/>
+      <joint joint="knee_left_B" coef="-.5"/>
+    </fixed>
+  </tendon>
+
+  <actuator>
+    <!-- Fencer A Actuators -->
+    <motor name="abdomen_z"       gear="40"  joint="abdomen_z"/>
+    <motor name="abdomen_y"       gear="40"  joint="abdomen_y"/>
+    <motor name="abdomen_x"       gear="40"  joint="abdomen_x"/>
+    <motor name="hip_x_right"     gear="40"  joint="hip_x_right"/>
+    <motor name="hip_z_right"     gear="40"  joint="hip_z_right"/>
+    <motor name="hip_y_right"     gear="120" joint="hip_y_right"/>
+    <motor name="knee_right"      gear="80"  joint="knee_right"/>
+    <motor name="ankle_y_right"   gear="20"  joint="ankle_y_right"/>
+    <motor name="ankle_x_right"   gear="20"  joint="ankle_x_right"/>
+    <motor name="hip_x_left"      gear="40"  joint="hip_x_left"/>
+    <motor name="hip_z_left"      gear="40"  joint="hip_z_left"/>
+    <motor name="hip_y_left"      gear="120" joint="hip_y_left"/>
+    <motor name="knee_left"       gear="80"  joint="knee_left"/>
+    <motor name="ankle_y_left"    gear="20"  joint="ankle_y_left"/>
+    <motor name="ankle_x_left"    gear="20"  joint="ankle_x_left"/>
+    <motor name="shoulder1_right" gear="20"  joint="shoulder1_right"/>
+    <motor name="shoulder2_right" gear="20"  joint="shoulder2_right"/>
+    <motor name="elbow_right"     gear="40"  joint="elbow_right"/>
+    <motor name="shoulder1_left"  gear="20"  joint="shoulder1_left"/>
+    <motor name="shoulder2_left"  gear="20"  joint="shoulder2_left"/>
+    <motor name="elbow_left"      gear="40"  joint="elbow_left"/>
+
+    <!-- Fencer B Actuators -->
+    <motor name="abdomen_z_B"       gear="40"  joint="abdomen_z_B"/>
+    <motor name="abdomen_y_B"       gear="40"  joint="abdomen_y_B"/>
+    <motor name="abdomen_x_B"       gear="40"  joint="abdomen_x_B"/>
+    <motor name="hip_x_right_B"     gear="40"  joint="hip_x_right_B"/>
+    <motor name="hip_z_right_B"     gear="40"  joint="hip_z_right_B"/>
+    <motor name="hip_y_right_B"     gear="120" joint="hip_y_right_B"/>
+    <motor name="knee_right_B"      gear="80"  joint="knee_right_B"/>
+    <motor name="ankle_y_right_B"   gear="20"  joint="ankle_y_right_B"/>
+    <motor name="ankle_x_right_B"   gear="20"  joint="ankle_x_right_B"/>
+    <motor name="hip_x_left_B"      gear="40"  joint="hip_x_left_B"/>
+    <motor name="hip_z_left_B"      gear="40"  joint="hip_z_left_B"/>
+    <motor name="hip_y_left_B"      gear="120" joint="hip_y_left_B"/>
+    <motor name="knee_left_B"       gear="80"  joint="knee_left_B"/>
+    <motor name="ankle_y_left_B"    gear="20"  joint="ankle_y_left_B"/>
+    <motor name="ankle_x_left_B"    gear="20"  joint="ankle_x_left_B"/>
+    <motor name="shoulder1_right_B" gear="20"  joint="shoulder1_right_B"/>
+    <motor name="shoulder2_right_B" gear="20"  joint="shoulder2_right_B"/>
+    <motor name="elbow_right_B"     gear="40"  joint="elbow_right_B"/>
+    <motor name="shoulder1_left_B"  gear="20"  joint="shoulder1_left_B"/>
+    <motor name="shoulder2_left_B"  gear="20"  joint="shoulder2_left_B"/>
+    <motor name="elbow_left_B"      gear="40"  joint="elbow_left_B"/>
+  </actuator>
+
+  <sensor>
+    <!-- Fencer A's epee tip touch sensor (for debug/tracking only) -->
+    <touch name="epee_tip_touch_A" site="epee_tip"/>
+    <!-- Fencer B's epee tip touch sensor (for debug/tracking only) -->
+    <touch name="epee_tip_touch_B" site="epee_tip_B"/>
+
+    <!-- 
+      THE CRITICAL SCORING SENSORS: 
+      We use a custom contact sensor here to report force ONLY between 
+      an epee blade (geom group 2) and an opposing body part (geom group 3 or 4).
+    -->
+    
+    <!-- Hit detection: Fencer A (epee: group 2) hits Fencer B (body: group 4) -->
+    <contact name="hit_A_on_B"
+             geom1="epee_blade"       
+             geom2="all" 
+             geomgroup1="2"           
+             geomgroup2="4" 
+             full="false" 
+             exclude="none" />
+
+    <!-- Hit detection: Fencer B (epee: group 2) hits Fencer A (body: group 3) -->
+    <contact name="hit_B_on_A"
+             geom1="epee_blade_B"     
+             geom2="all" 
+             geomgroup1="2" 
+             geomgroup2="3" 
+             full="false" 
+             exclude="none" />
+
+  </sensor>
+</mujoco>
