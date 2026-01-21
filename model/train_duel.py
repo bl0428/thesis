@@ -8,15 +8,15 @@ from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewar
 from gymnasium.envs.registration import register
 from time import sleep
 
-# ---- Register the environment ----
+# ---- Register the duel environment ----
 register(
-    id="FencingBiped-v0",
-    entry_point="fencing_env.envs.fencing_env:FencingEnv",
+    id="FencingDuel-v0",
+    entry_point="fencing_env.envs.fencing_duel_env:FencingDuelEnv",
     max_episode_steps=1000,
 )
 
 num_cpu = 4
-env_id = "FencingBiped-v0"
+env_id = "FencingDuel-v0"
 
 vec_env = make_vec_env(env_id, n_envs=num_cpu, env_kwargs={"render_mode": None})
 vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=True, clip_obs=10.0)
@@ -24,12 +24,17 @@ vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=True, clip_obs=10.0)
 # Evaluation environment (also normalized to match training)
 eval_env = make_vec_env(env_id, n_envs=1, env_kwargs={"render_mode": None})
 eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=True, clip_obs=10.0, training=False)
+# Share normalization statistics with training env so evaluation is consistent
+eval_env.obs_rms = vec_env.obs_rms
+eval_env.ret_rms = vec_env.ret_rms
 
-log_dir = "/Users/brandon/Documents/thesis/model/logs/ppo_fencing"
+log_dir = "/Users/brandon/Documents/thesis/model/logs/ppo_fencing_duel"
 os.makedirs(log_dir, exist_ok=True)
+best_model_dir = os.path.join(log_dir, "ppo_fencing_duel")
+os.makedirs(best_model_dir, exist_ok=True)
 
 # INCREASED: Humanoids need much more training time
-total_timesteps = 3_000_000  # Start with 1M, can increase to 5-10M for better performance
+total_timesteps = 1_000_000  # Start with 1M, can increase to 5-10M for better performance
 
 # PPO with humanoid-optimized hyperparameters
 model = PPO(
@@ -57,16 +62,16 @@ model = PPO(
 
 eval_callback = EvalCallback(
     eval_env,
-    best_model_save_path=log_dir + "/ppo_fencing/",
-    log_path=log_dir + "/ppo_fencing/",
+    best_model_save_path=best_model_dir,
+    log_path=best_model_dir,
     eval_freq=10000,
     deterministic=True,
     render=False,
 )
 
-print(f"Starting training for {total_timesteps:,} timesteps...")
+print(f"Starting duel training for {total_timesteps:,} timesteps...")
 model.learn(total_timesteps=total_timesteps, callback=eval_callback)
-model.save(os.path.join(log_dir, "fencer_final"))
+model.save(os.path.join(log_dir, "fencer_duel_final"))
 
 vec_env.save(os.path.join(log_dir, "vec_normalize.pkl"))
 
@@ -74,7 +79,7 @@ vec_env.close()
 eval_env.close()
 
 print("\n--- Testing Best Model ---")
-best_model_path = os.path.join(log_dir, "best_model.zip")
+best_model_path = os.path.join(best_model_dir, "best_model.zip")
 norm_stats_path = os.path.join(log_dir, "vec_normalize.pkl")
 
 if os.path.exists(best_model_path):

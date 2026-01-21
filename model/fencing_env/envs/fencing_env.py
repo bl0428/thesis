@@ -94,12 +94,12 @@ class FencingEnv(gym.Env):
         min_height = 0.6  # Minimum acceptable height (squat level)
         
         if torso_height < 0.38:
-            # Severe penalty for falling
-            reward -= 8.0
+            # Stronger penalty for falling
+            reward -= 45.0
             done = True
         elif torso_height < min_height:
             # Penalty for being too low (but not fallen)
-            reward -= 2.0 * (min_height - torso_height) / min_height
+            reward -= 15 * (min_height - torso_height) / min_height
         else:
             # Reward for height, with peak at target_height
             # Use a smooth reward that peaks at target_height
@@ -141,14 +141,16 @@ class FencingEnv(gym.Env):
             epee_tip_pos = self.data.site_xpos[self.epee_tip_site_id, :]
             target_pos = self.data.site_xpos[self.target_site_id, :]
             target_dist = float(np.linalg.norm(epee_tip_pos - target_pos))
-            if target_dist < 0.05:
-                reward += 2.5
-                hit_target = True
+            # Shaped reward: stronger pull near target, mild penalty far away
+            reward -= (target_dist ** 2)
+            # reward += 1.0 * np.exp(-6.0 * target_dist)
+            
         if self.target_touch_sensor_id is not None:
             touch_val = float(self.data.sensordata[self.target_touch_sensor_id])
             if touch_val > 0:
-                reward += 10.0
+                reward += 15.0
                 hit_target = True
+                done = True
 
         return self._get_obs(), reward, done, False, {"hit_target": hit_target, "target_distance": target_dist}
 
