@@ -91,13 +91,15 @@
 
   <worldbody>
     <geom name="floor" size="0 0 .05" type="plane" material="grid" condim="3"/>
+    <!-- Visual strip (14m x 2m) centered at origin; non-colliding -->
+    <geom name="piste" type="box" size="7 1 0.02" pos="0 0 0.02" rgba="0.6 0.6 0.6 1" contype="0" conaffinity="0"/>
     <light name="spotlight" mode="targetbodycom" target="torso" diffuse=".8 .8 .8" specular="0.3 0.3 0.3" pos="0 -6 4" cutoff="30"/>
     <light name="top" pos="1.5 0 2" mode="trackcom"/>
 
     <!-- ============================================== -->
     <!-- FENCER A (Original Humanoid - uses class="body_A") -->
     <!-- ============================================== -->
-    <body name="torso" pos="0 0 1.282" childclass="body_A">
+    <body name="torso" pos="-2 0 1.282" childclass="body_A">
       <camera name="back_A" pos="-3 0 1" xyaxes="0 -1 0 1 0 2" mode="trackcom"/>
       <camera name="side_A" pos="0 -3 1" xyaxes="1 0 0 0 1 2" mode="trackcom"/>
       <freejoint name="root"/>
@@ -188,7 +190,7 @@
     <!-- Placed 3 units away and rotated 180 degrees (quat="0 0 1 0") -->
     <!-- ============================================== -->
     <!-- Rotate 180° about z so Fencer B faces A but stays upright -->
-    <body name="torso_B" pos="3 0 1.282" quat="0 0 0 1" childclass="body_B">
+    <body name="torso_B" pos="2 0 1.282" quat="0 0 0 1" childclass="body_B">
       <camera name="back_B" pos="-3 0 1" xyaxes="0 -1 0 1 0 2" mode="trackcom"/>
       <camera name="side_B" pos="0 -3 1" xyaxes="1 0 0 0 1 2" mode="trackcom"/>
       <freejoint name="root_B"/>

@@ -1,145 +1,87 @@
-import gymnasium as gym
+import ray
 import os
-import numpy as np
-from stable_baselines3 import PPO
-from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import VecNormalize
-from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold
-from gymnasium.envs.registration import register
-from time import sleep
+import sys
+from pathlib import Path
 
-# ---- Register the duel environment ----
-register(
-    id="FencingDuel-v0",
-    entry_point="fencing_env.envs.fencing_duel_env:FencingDuelEnv",
-    max_episode_steps=1000,
-)
+# Add project root to sys.path so workers can find fencing_env
+script_dir = Path(__file__).resolve().parent
+if str(script_dir) not in sys.path:
+    sys.path.append(str(script_dir))
+if str(script_dir.parent) not in sys.path:
+    sys.path.append(str(script_dir.parent))
 
-num_cpu = 4
-env_id = "FencingDuel-v0"
+from ray import tune
+from ray.train import CheckpointConfig
+from ray.rllib.algorithms.ppo import PPOConfig
+from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
+from ray.tune.registry import register_env
+from fencing_env.envs.fencing_duel_env import FencingDuelEnv
 
-vec_env = make_vec_env(env_id, n_envs=num_cpu, env_kwargs={"render_mode": None})
-vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=True, clip_obs=10.0)
+# 1. Register the environment so RLLib can find it
+def env_creator(config):
+    return ParallelPettingZooEnv(FencingDuelEnv())
 
-# Evaluation environment (also normalized to match training)
-eval_env = make_vec_env(env_id, n_envs=1, env_kwargs={"render_mode": None})
-eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=True, clip_obs=10.0, training=False)
-# Share normalization statistics with training env so evaluation is consistent
-eval_env.obs_rms = vec_env.obs_rms
-eval_env.ret_rms = vec_env.ret_rms
+register_env("fencing_duel_v0", env_creator)
 
-log_dir = "/Users/brandon/Documents/thesis/model/logs/ppo_fencing_duel"
-os.makedirs(log_dir, exist_ok=True)
-best_model_dir = os.path.join(log_dir, "ppo_fencing_duel")
-os.makedirs(best_model_dir, exist_ok=True)
+if __name__ == "__main__":
+    # Ensure registration is also inside __main__ for the driver
+    register_env("fencing_duel_v0", env_creator)
+    ray.init(ignore_reinit_error=True)
 
-# INCREASED: Humanoids need much more training time
-total_timesteps = 1_000_000  # Start with 1M, can increase to 5-10M for better performance
+    # 2. Define the Multi-Agent Policy Mapping
+    # Both fencers will share the same neural network weights (Self-Play)
+    test_env = FencingDuelEnv()
+    obs_space = test_env.observation_spaces["fencer_a"]
+    act_space = test_env.action_spaces["fencer_a"]
 
-# PPO with humanoid-optimized hyperparameters
-model = PPO(
-    "MlpPolicy",
-    vec_env,
-    verbose=1,
-    tensorboard_log=log_dir + "/tb/",
-    # Hyperparameters tuned for humanoid complexity
-    learning_rate=3e-4,  # Standard learning rate
-    n_steps=2048,  # Steps per update (good default)
-    batch_size=64,  # Batch size (can increase to 128-256 for larger networks)
-    n_epochs=10,  # PPO epochs per update (default is 10)
-    gamma=0.99,  # Discount factor
-    gae_lambda=0.95,  # GAE lambda
-    clip_range=0.2,  # PPO clip range
-    ent_coef=0.01,  # Entropy coefficient (encourages exploration)
-    vf_coef=0.5,  # Value function coefficient
-    max_grad_norm=0.5,  # Gradient clipping (important for stability)
-    # Network architecture (humanoids benefit from larger networks)
-    # Note: SB3 v1.8.0+ requires dict format, not list
-    policy_kwargs=dict(
-        net_arch=dict(pi=[256, 256], vf=[256, 256])  # Larger networks for complex observations
+    config = (
+        PPOConfig()
+        .environment("fencing_duel_v0")
+        .framework("torch")
+        # Use stable Legacy API stack for easier checkpoint loading/visualization
+        .api_stack(enable_rl_module_and_learner=False, enable_env_runner_and_connector_v2=False)
+        .resources(num_gpus=1 if ray.cluster_resources().get("GPU") else 0)
+        .env_runners(num_env_runners=4, observation_filter="MeanStdFilter")
+        .multi_agent(
+            policies={
+                "shared_policy": (None, obs_space, act_space, {})
+            },
+            # Handle any combination of arguments Ray might pass
+            policy_mapping_fn=lambda agent_id, *args, **kwargs: "shared_policy",
+        )
+        .training(
+            gamma=0.99,
+            lr=1e-5, # Significantly lower LR for long-term stability
+            train_batch_size=32000, # Larger batch size for smoother gradients
+            minibatch_size=1024,
+            num_epochs=20, # More epochs to squeeze more out of the larger batch
+            lambda_=0.95,
+            clip_param=0.2,
+            entropy_coeff=0.01, # Lower entropy to allow convergence after discovery
+            kl_coeff=0.2, # Explicit KL control to prevent catastrophic forgetting
+            kl_target=0.01,
+        )
     )
-)
 
-eval_callback = EvalCallback(
-    eval_env,
-    best_model_save_path=best_model_dir,
-    log_path=best_model_dir,
-    eval_freq=10000,
-    deterministic=True,
-    render=False,
-)
+    # 3. Run Training
+    stop = {
+        "training_iteration": 500
+    }
 
-print(f"Starting duel training for {total_timesteps:,} timesteps...")
-model.learn(total_timesteps=total_timesteps, callback=eval_callback)
-model.save(os.path.join(log_dir, "fencer_duel_final"))
-
-vec_env.save(os.path.join(log_dir, "vec_normalize.pkl"))
-
-vec_env.close()
-eval_env.close()
-
-print("\n--- Testing Best Model ---")
-best_model_path = os.path.join(best_model_dir, "best_model.zip")
-norm_stats_path = os.path.join(log_dir, "vec_normalize.pkl")
-
-if os.path.exists(best_model_path):
-    print(f"Loading best model from {best_model_path}")
-    # Load normalization stats if available
-    if os.path.exists(norm_stats_path):
-        # Create normalized env for loading (model expects normalized obs)
-        test_vec_env = make_vec_env(env_id, n_envs=1, env_kwargs={"render_mode": None})
-        test_vec_env = VecNormalize.load(norm_stats_path, test_vec_env)
-        test_vec_env.training = False
-        best_model = PPO.load(best_model_path, env=test_vec_env)
-        use_normalization = True
-        # Note: test_vec_env will be closed later, but we keep it for now
-        # since the model might reference it
-    else:
-        best_model = PPO.load(best_model_path)
-        use_normalization = False
-        test_vec_env = None
-else:
-    print("Best model not found, using final model")
-    best_model = model
-    use_normalization = True
-    test_vec_env = None
-
-# Create unnormalized environment for visualization
-test_env = gym.make(env_id, render_mode="human")
-obs, info = test_env.reset()
-
-# Load normalization wrapper for manual normalization if needed
-norm_wrapper = None
-if use_normalization and os.path.exists(norm_stats_path):
-    # Load VecNormalize wrapper (it's saved as a VecNormalize object, not a dict)
-    test_vec_env_for_norm = make_vec_env(env_id, n_envs=1, env_kwargs={"render_mode": None})
-    norm_wrapper = VecNormalize.load(norm_stats_path, test_vec_env_for_norm)
-    norm_wrapper.training = False  # Don't update stats during testing
-    print("Using normalization stats for testing")
-    # Close the temporary env (we only needed it to load the wrapper)
-    test_vec_env_for_norm.close()
+    checkpoint_config = CheckpointConfig(
+        num_to_keep=3,
+        checkpoint_score_attribute="episode_reward_mean",
+        checkpoint_score_order="max",
+    )
     
-for step in range(1000):
-    # Normalize observation manually if model was trained with normalization
-    if norm_wrapper is not None:
-        # Use VecNormalize's normalize_obs method
-        # Convert single obs to batch format (VecNormalize expects batched obs)
-        obs_batch = np.array([obs])
-        obs_normalized_batch = norm_wrapper.normalize_obs(obs_batch)
-        obs_normalized = obs_normalized_batch[0]  # Extract single obs from batch
-        action, _ = best_model.predict(obs_normalized, deterministic=True)
-    else:
-        action, _ = best_model.predict(obs, deterministic=True)
-    
-    obs, reward, terminated, truncated, info = test_env.step(action)
-    sleep(0.01)
-    test_env.render()
-    
-    if terminated or truncated:
-        print(f"Episode finished at step {step} with reward: {reward:.2f}")
-        obs, info = test_env.reset()
+    results = tune.run(
+        "PPO",
+        config=config.to_dict(),
+        stop=stop,
+        checkpoint_config=checkpoint_config,
+        checkpoint_freq=10,
+        checkpoint_at_end=True,
+        storage_path=str(script_dir / "logs" / "ppo_fencing_marl")
+    )
 
-test_env.close()
-# Close the test_vec_env if it was created
-if 'test_vec_env' in locals() and test_vec_env is not None:
-    test_vec_env.close()
+    ray.shutdown()

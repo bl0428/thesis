@@ -7,13 +7,14 @@ from stable_baselines3.common.callbacks import EvalCallback
 num_cpu = 4
 env_id = "InvertedPendulum-v5"
 
+# make_vec_env expects env_id string and env_kwargs dict, not an environment instance
 vec_env = make_vec_env(env_id, n_envs=num_cpu)
 eval_env = make_vec_env(env_id, n_envs=1)
 
 log_dir = "/Users/brandon/Documents/thesis/model/logs/ppo_pendulum"
 os.makedirs(log_dir, exist_ok=True)
 
-total_timesteps = 100000
+total_timesteps = 25000
 
 model = PPO("MlpPolicy",
             vec_env,
@@ -28,6 +29,7 @@ model.learn(total_timesteps=total_timesteps, callback=eval_callback)
 model.save(os.path.join(log_dir, "pendulum_final"))
 
 vec_env.close()
+eval_env.close()
 
 eval_env = gym.make(env_id, render_mode="human")
 obs, info = eval_env.reset()
