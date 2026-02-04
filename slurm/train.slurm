@@ -13,19 +13,7 @@
 
 module purge
 module load anaconda3/2024.6
-conda activate nnue-train
-module load gcc-toolset/13
+source /scratch/gpfs/GRIFFITHS/bl0428/thesis/mujoco-env/bin/activate
 
-cd /scratch/gpfs/bl0428/nnue-pytorch/
-python train.py \
-    /scratch/gpfs/bl0428/bin/piece/train_data.binpack \
-    /scratch/gpfs/bl0428/bin/piece/validate_data.binpack \
-    --batch-size 16384 \
-    --gpus "0," \
-    --threads 4 \
-    --num-workers 4 \
-    --no-smart-fen-skipping \
-    --no-wld-fen-skipping \
-    --features=HalfKAv2_hm \
-    --lambda=1.0 \
-    --max_epochs=400
+cd /scratch/gpfs/GRIFFITHS/bl0428/thesis/model/
+mjpython train_duel.py
