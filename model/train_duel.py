@@ -65,7 +65,7 @@ if __name__ == "__main__":
 
     # 3. Run Training
     stop = {
-        "training_iteration": 500
+        "training_iteration": 10000
     }
 
     checkpoint_config = CheckpointConfig(
