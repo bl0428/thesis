@@ -1,7 +1,8 @@
 """
 Run and visualize a trained self-play PPO model (Stable-Baselines3).
 
-Loads checkpoint from logs/ppo_selfplay_sb3 and runs episodes with MuJoCo rendering.
+Uses the same env setup as train_selfplay_sb3 (VecNormalize, clip_obs, etc.)
+so visualization accurately reflects trained behavior.
 
 Usage:
     mjpython model/run_selfplay_sb3.py   # Required on macOS for MuJoCo viewer
@@ -20,19 +21,20 @@ for p in (script_dir, script_dir.parent):
 
 from stable_baselines3 import PPO
 
-from fencing_env.envs.selfplay_env import make_selfplay_vec_env
+from fencing_env.envs.selfplay_env import make_eval_env
 
 OUTPUT_DIR = script_dir / "logs" / "ppo_selfplay_sb3"
+VECNORM_PATH = OUTPUT_DIR / "vec_normalize.pkl"
 N_EPISODES = 5
-MAX_STEPS = 1000
+# Match training eval: episodes avg ~3000 steps; use 5000 to avoid truncation
+MAX_STEPS = 5000
 DO_LIVE_RENDER = True
 MUJOCO_TIMESTEP = 0.005  # Match dual_humanoid_fencing.xml; for real-time sync
 
 MODEL_PATHS = [
     OUTPUT_DIR / "best_model.zip",
     OUTPUT_DIR / "selfplay_final.zip",
-]  # Also: ppo_selfplay_* checkpoints for mid-training
-VECNORM_PATH = OUTPUT_DIR / "vec_normalize.pkl"
+]
 
 
 def main():
@@ -53,14 +55,11 @@ def main():
         print(f"No model found in {OUTPUT_DIR}")
         return
 
-    env = make_selfplay_vec_env(
-        num_envs=1,
-        render_mode="human" if DO_LIVE_RENDER else None,
-        normalize=False,
-        vec_normalize_path=VECNORM_PATH,
-    )
-    if not VECNORM_PATH.exists():
-        print("Warning: vec_normalize.pkl not found. Model was trained with normalization.")
+    try:
+        env = make_eval_env(VECNORM_PATH, render_mode="human" if DO_LIVE_RENDER else None)
+    except FileNotFoundError as e:
+        print(e)
+        return
 
     model = PPO.load(str(model_path), env=env)
 
@@ -73,7 +72,8 @@ def main():
         print("Rendering at real-time speed (sync to simulation).")
 
     for ep in range(N_EPISODES):
-        obs = env.reset()
+        result = env.reset()
+        obs = result[0] if isinstance(result, tuple) else result
         ep_returns = [0.0] * n_agents  # per-agent returns
         step_start = time.time()
 
